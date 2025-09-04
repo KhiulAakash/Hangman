@@ -1,93 +1,61 @@
-import unittest
 import time
-from unittest.mock import patch, MagicMock
-from hangman_gui import HangmanGame
+import unittest
+from hangman import HangmanCore, is_valid_phrase, DICTIONARY_WORDS
 
-class TestHangmanGUI(unittest.TestCase):
-    
-    def test_load_words_basic(self):
-        game = HangmanGame('basic')
-        words = game.load_words('basic')
-        self.assertIsInstance(words, list)
-        self.assertTrue(len(words) > 0)
-        self.assertTrue(all(' ' not in word for word in words))
-    
-    def test_load_words_intermediate(self):
-        game = HangmanGame('intermediate')
-        phrases = game.load_words('intermediate')
-        self.assertIsInstance(phrases, list)
-        self.assertTrue(len(phrases) > 0)
-        self.assertTrue(any(' ' in phrase for phrase in phrases))
-    
-    def test_select_random_word(self):
-        game = HangmanGame('basic')
-        game.words = ['python', 'hangman', 'testing']
-        word = game.select_random_word()
-        self.assertIn(word, game.words)
-    
-    def test_generate_display_word(self):
-        game = HangmanGame('basic')
-        game.secret_word = 'python'
-        game.guessed_letters = set()
-        
-        display = game.generate_display_word()
-        self.assertEqual(display, '_ _ _ _ _ _')
-        
-        game.guessed_letters.add('p')
-        display = game.generate_display_word()
-        self.assertEqual(display, 'p _ _ _ _ _')
-        
-        game.guessed_letters.add('y')
-        game.guessed_letters.add('n')
-        display = game.generate_display_word()
-        self.assertEqual(display, 'p y _ _ _ n')
-    
-    def test_process_guess_correct(self):
-        game = HangmanGame('basic')
-        game.secret_word = 'python'
-        game.guessed_letters = set()
-        
-        result = game.process_guess('p')
-        self.assertTrue(result)
-        self.assertIn('p', game.guessed_letters)
-    
-    def test_process_guess_incorrect(self):
-        game = HangmanGame('basic')
-        game.secret_word = 'python'
-        game.guessed_letters = set()
-        
-        result = game.process_guess('z')
-        self.assertFalse(result)
-        self.assertIn('z', game.guessed_letters)
-    
-    def test_process_guess_already_guessed(self):
-        game = HangmanGame('basic')
-        game.secret_word = 'python'
-        game.guessed_letters = {'p'}
-        
-        result = game.process_guess('p')
-        self.assertIsNone(result)
-    
+class TestHangmanCore(unittest.TestCase):
+    def setUp(self):
+        self.core = HangmanCore(level='basic', max_lives=6, round_time=0.2)  # fast timer for tests
+        self.core.pool = ["python"]  # deterministic
+        self.core.new_round()
+
+    def test_new_round_sets_word_and_resets_state(self):
+        self.assertEqual(self.core.secret_word, "python")
+        self.assertEqual(self.core.lives, 6)
+        self.assertEqual(self.core.guessed_letters, set())
+        self.assertTrue(0 <= self.core.time_remaining() <= self.core.round_time)
+
+    def test_process_guess_correct_and_reveal(self):
+        self.assertTrue(self.core.process_guess('p'))
+        self.assertIn('p', self.core.guessed_letters)
+        self.assertIn('p', self.core.display_word())
+
+    def test_process_guess_wrong_deducts_life(self):
+        lives_before = self.core.lives
+        self.assertFalse(self.core.process_guess('z'))
+        self.assertEqual(self.core.lives, lives_before - 1)
+
+    def test_process_guess_repeated_returns_none(self):
+        self.core.process_guess('p')
+        self.assertIsNone(self.core.process_guess('p'))
+
     def test_is_word_guessed(self):
-        game = HangmanGame('basic')
-        game.secret_word = 'python'
-        
-        game.guessed_letters = {'p', 'y', 't', 'h', 'o', 'n'}
-        self.assertTrue(game.is_word_guessed())
-        
-        game.guessed_letters = {'p', 'y', 't'}
-        self.assertFalse(game.is_word_guessed())
-    
-    @patch('hangman_gui.HangmanGame.select_random_word')
-    def test_initialize_game(self, mock_select):
-        mock_select.return_value = 'python'
-        game = HangmanGame('basic')
-        game.initialize_game()
-        
-        self.assertEqual(game.secret_word, 'python')
-        self.assertEqual(game.guessed_letters, set())
-        self.assertEqual(game.lives, 6)
-        self.assertIsNotNone(game.start_time)
+        for ch in set("python"):
+            self.core.process_guess(ch)
+        self.assertTrue(self.core.is_word_guessed())
 
-if __name__ == '__main__':
+    def test_time_up_deducts_life(self):
+        lives_before = self.core.lives
+        # Let the timer expire logically
+        time.sleep(self.core.round_time + 0.05)
+        self.core.time_up()
+        self.assertEqual(self.core.lives, lives_before - 1)
+
+    def test_level_switch_refreshes_pool(self):
+        self.core.set_level('intermediate')
+        self.core.new_round()
+        self.assertIn(' ', self.core.secret_word)  # phrase has a space
+
+class TestDictionaryValidation(unittest.TestCase):
+    def test_valid_phrase(self):
+        self.assertTrue(is_valid_phrase("unit testing"))
+        self.assertTrue(is_valid_phrase("software engineer"))
+
+    def test_invalid_phrase(self):
+        # uses a word not in DICTIONARY_WORDS
+        invalid = "fuzzy unicorn"
+        # guard to ensure this is actually not in dictionary
+        self.assertFalse(set(invalid.split()).issubset(DICTIONARY_WORDS))
+        self.assertFalse(is_valid_phrase(invalid))
+
+if __name__ == "__main__":
     unittest.main()
