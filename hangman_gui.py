@@ -3,7 +3,7 @@ from tkinter import messagebox, simpledialog, ttk
 import random
 import time
 import os
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 class HangmanGame:
     def __init__(self, level='basic'):
@@ -14,11 +14,12 @@ class HangmanGame:
         self.lives = 6
         self.start_time = None
         self.timer_id = None
+        self.hangman_parts = []  # Store hangman drawing elements for animation
         
         # Initialize GUI
         self.root = tk.Tk()
         self.root.title("Hangman Game")
-        self.root.geometry("800x600")
+        self.root.geometry("900x700")
         self.root.resizable(False, False)
         
         # Setup styles
@@ -52,13 +53,9 @@ class HangmanGame:
         self.level_label = ttk.Label(main_frame, text=f"Level: {self.level.capitalize()}", font=('Arial', 14))
         self.level_label.grid(row=1, column=0, columnspan=6, pady=5)
         
-        # Hangman image
-        self.hangman_frame = ttk.Frame(main_frame)
-        self.hangman_frame.grid(row=2, column=0, columnspan=6, pady=10)
-        
-        self.hangman_label = ttk.Label(self.hangman_frame)
-        self.hangman_label.grid(row=0, column=0)
-        self.update_hangman_image()
+        # Hangman canvas for animation
+        self.hangman_canvas = tk.Canvas(main_frame, width=300, height=300, bg='white', relief='solid', bd=2)
+        self.hangman_canvas.grid(row=2, column=0, columnspan=6, pady=10)
         
         # Word display
         self.word_label = ttk.Label(main_frame, style='Word.TLabel')
@@ -90,7 +87,91 @@ class HangmanGame:
         
         quit_btn = ttk.Button(control_frame, text="Quit", command=self.root.quit)
         quit_btn.grid(row=0, column=1, padx=10)
+    
+    def draw_hangman(self, stage):
+        """Draw the hangman animation based on the current stage (0-6)"""
+        self.hangman_canvas.delete("all")
+        self.hangman_parts = []
         
+        # Draw the gallows (always visible)
+        gallows_parts = [
+            self.hangman_canvas.create_line(50, 250, 150, 250, width=4, fill='brown'),  # base
+            self.hangman_canvas.create_line(100, 250, 100, 50, width=4, fill='brown'),  # pole
+            self.hangman_canvas.create_line(100, 50, 180, 50, width=4, fill='brown'),   # top beam
+            self.hangman_canvas.create_line(180, 50, 180, 80, width=3, fill='brown')    # rope
+        ]
+        self.hangman_parts.extend(gallows_parts)
+        
+        # Draw hangman parts based on stage with animation delay
+        if stage >= 1:  # Head
+            head = self.hangman_canvas.create_oval(170, 80, 190, 100, width=2, outline='black')
+            self.hangman_parts.append(head)
+            self.animate_part(head)
+        
+        if stage >= 2:  # Body
+            body = self.hangman_canvas.create_line(180, 100, 180, 150, width=2, fill='black')
+            self.hangman_parts.append(body)
+            self.animate_part(body)
+        
+        if stage >= 3:  # Left arm
+            left_arm = self.hangman_canvas.create_line(180, 110, 160, 130, width=2, fill='black')
+            self.hangman_parts.append(left_arm)
+            self.animate_part(left_arm)
+        
+        if stage >= 4:  # Right arm
+            right_arm = self.hangman_canvas.create_line(180, 110, 200, 130, width=2, fill='black')
+            self.hangman_parts.append(right_arm)
+            self.animate_part(right_arm)
+        
+        if stage >= 5:  # Left leg
+            left_leg = self.hangman_canvas.create_line(180, 150, 160, 180, width=2, fill='black')
+            self.hangman_parts.append(left_leg)
+            self.animate_part(left_leg)
+        
+        if stage >= 6:  # Right leg
+            right_leg = self.hangman_canvas.create_line(180, 150, 200, 180, width=2, fill='black')
+            self.hangman_parts.append(right_leg)
+            self.animate_part(right_leg)
+        
+        # Add facial features for the final stage
+        if stage >= 6:
+            # Sad face when game is lost
+            left_eye = self.hangman_canvas.create_oval(173, 85, 177, 89, width=1, fill='black')
+            right_eye = self.hangman_canvas.create_oval(183, 85, 187, 89, width=1, fill='black')
+            mouth = self.hangman_canvas.create_arc(173, 92, 187, 98, start=0, extent=-180, outline='black', width=1)
+            self.hangman_parts.extend([left_eye, right_eye, mouth])
+    
+    def animate_part(self, part_id):
+        """Animate a single hangman part with a drawing effect"""
+        coords = self.hangman_canvas.coords(part_id)
+        original_state = self.hangman_canvas.itemcget(part_id, 'state')
+        
+        # Temporarily hide the part
+        self.hangman_canvas.itemconfig(part_id, state='hidden')
+        self.root.update()
+        
+        # Animate the drawing
+        if len(coords) == 4:  # For oval/rectangle
+            self.hangman_canvas.itemconfig(part_id, state='normal')
+        else:  # For lines
+            # Get line coordinates
+            x1, y1, x2, y2 = coords
+            steps = 20
+            dx = (x2 - x1) / steps
+            dy = (y2 - y1) / steps
+            
+            # Create temporary line for animation
+            temp_line = self.hangman_canvas.create_line(x1, y1, x1, y1, width=2, fill='black')
+            
+            for i in range(steps + 1):
+                self.hangman_canvas.coords(temp_line, x1, y1, x1 + dx * i, y1 + dy * i)
+                self.root.update()
+                time.sleep(0.03)
+            
+            # Replace with permanent line
+            self.hangman_canvas.delete(temp_line)
+            self.hangman_canvas.itemconfig(part_id, state='normal')
+    
     def create_keyboard(self, parent):
         keyboard_frame = ttk.Frame(parent)
         keyboard_frame.grid(row=6, column=0, columnspan=6, pady=10)
@@ -122,21 +203,6 @@ class HangmanGame:
             btn.grid(row=2, column=i+2, padx=2, pady=2)
             setattr(self, f'btn_{letter}', btn)
     
-    def update_hangman_image(self):
-        # Try to load hangman images, use text fallback if images not found
-        try:
-            image_path = f"assets/hangman{6 - self.lives}.png"
-            if os.path.exists(image_path):
-                image = Image.open(image_path)
-                image = image.resize((200, 200), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(image)
-                self.hangman_label.configure(image=photo)
-                self.hangman_label.image = photo
-            else:
-                self.hangman_label.configure(text=f"Hangman: {6 - self.lives}/6")
-        except Exception as e:
-            self.hangman_label.configure(text=f"Hangman: {6 - self.lives}/6")
-    
     def load_words(self, level):
         filename = 'words.txt' if level == 'basic' else 'phrases.txt'
         try:
@@ -159,11 +225,17 @@ class HangmanGame:
         self.lives = 6
         self.start_time = time.time()
         
+        # Clear hangman canvas
+        self.hangman_canvas.delete("all")
+        self.hangman_parts = []
+        
+        # Draw empty gallows
+        self.draw_hangman(0)
+        
         # Update GUI
         self.update_word_display()
         self.update_lives_display()
         self.update_used_letters()
-        self.update_hangman_image()
         
         # Enable all buttons
         for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
@@ -195,7 +267,7 @@ class HangmanGame:
         self.lives -= 1
         self.start_time = time.time()  # Reset timer
         self.update_lives_display()
-        self.update_hangman_image()
+        self.draw_hangman(6 - self.lives)  # Update hangman animation
         
         if self.lives <= 0:
             self.game_over()
@@ -256,7 +328,10 @@ class HangmanGame:
         self.update_word_display()
         self.update_lives_display()
         self.update_used_letters()
-        self.update_hangman_image()
+        
+        # Update hangman animation for wrong guesses
+        if result == False:
+            self.draw_hangman(6 - self.lives)
         
         # Check game state
         if self.is_word_guessed():
@@ -272,6 +347,20 @@ class HangmanGame:
     def victory(self):
         if self.timer_id:
             self.root.after_cancel(self.timer_id)
+        
+        # Add happy face to hangman
+        if self.hangman_parts and len(self.hangman_parts) > 4:  # If head exists
+            head_coords = self.hangman_canvas.coords(self.hangman_parts[4])
+            if len(head_coords) == 4:  # Oval coordinates
+                x1, y1, x2, y2 = head_coords
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+                
+                # Draw happy eyes and mouth
+                self.hangman_canvas.create_oval(center_x-7, center_y-5, center_x-3, center_y-1, fill='black')
+                self.hangman_canvas.create_oval(center_x+3, center_y-5, center_x+7, center_y-1, fill='black')
+                self.hangman_canvas.create_arc(center_x-5, center_y, center_x+5, center_y+6, start=0, extent=-180, outline='black', width=2)
+        
         messagebox.showinfo("Congratulations!", f"You won! The word was: {self.secret_word}")
     
     def game_over(self):
